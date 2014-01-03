@@ -1,7 +1,9 @@
 makefiles
 =========
 
-A Makefile for building single-target, general-purpose C++ projects.
+(Currently only a single Makefile; more in the future.)
+
+A Makefile for building single-target C++ projects.
 
 Features
 --------
