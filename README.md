@@ -1,9 +1,7 @@
 makefiles
 =========
 
-(Currently only a single Makefile; more in the future.)
-
-A Makefile for building single-target C++ projects.
+Makefiles for auto-building single-target C/C++ projects.
 
 Features
 --------
@@ -11,7 +9,7 @@ Features
 - Set your executable name and source directories. That's all.
 - No need to track dependencies in the `Makefile`.
 - Incremental compilation works with source and header file changes.
-- Compile mixed C++ / C projects.
+- Compile C++, C, or mixed projects.
 - Compile and link options are easily configurable.
 - Compact and clean.
 
