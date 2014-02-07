@@ -43,14 +43,15 @@ OPTS = $(CXX_LANG) $(CXX_OPT)
 all: $(TARGET)
 
 $(TARGET) : $(OBJS)
-    @echo [LD] $@
-    @$(CXX) $(OPTS) $(OBJS) $(LINK_FLAGS) -o $(TARGET)
+	@echo [LD] $@
+	@$(CXX) $(OPTS) $(OBJS) $(LINK_FLAGS) -o $(TARGET)
 
 $(SRC_SUFFIX:=.o) :
-    @echo [CC] $@
-    @$(CXX) $(OPTS) $(INC_DIRS) -MD -MP -c -o $@ $<
+	@echo [CC] $@
+	@$(CXX) $(OPTS) $(INC_DIRS) -MD -MP -c -o $@ $<
 
 clean:
-    rm -f $(OBJS) $(DEPS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET)
 
 -include $(DEPS)
+
