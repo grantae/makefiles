@@ -1,0 +1,104 @@
+###############################################################################
+#                                                                             #
+#             General Makefile for C++ Projects with Unit Tests               #
+#           Copyright (C) 2014 Grant Ayers <ayers@cs.stanford.edu>            #
+#           Hosted at GitHub: https://github.com/grantea/makefiles            #
+#                                                                             #
+# This file is free software distributed under the BSD license. See LICENSE   #
+# for more information.                                                       #
+#                                                                             #
+# This is a single-target, general-purpose Makefile for C++ projects which    #
+# supports unit testing using the googletest (gtest) framework. It is         #
+# for use with GNU Make and GCC, but may work with other software with little #
+# or no modification.                                                         #
+#                                                                             #
+# Set the program name, source root, and any desired options and compiler     #
+# flags. For unit testing, specify the unit test identifier which is a file   #
+# name suffix that identifies unit tests. For example, if this is 'Test' then #
+# source files 'car.cc' and 'animal.cc' would have unit tests called          #
+# 'carTest.cc' and 'animalTest.cc', respectively. To exclude any files from   #
+# unit tests, set 'TEST_EXCLUDE' (e.g. 'main' to exclude main.cc, etc.).      #
+# Finally, specify the location of the gtest framework.                       #
+# See https://code.google.com/p/googletest to download and compile the        #
+# gtest framework.                                                            #
+#                                                                             #
+# Type 'make' to build, and 'make test' to test. All dependencies (including  #
+# header file changes) will be handled automatically.                         #
+#                                                                             #
+###############################################################################
+
+
+#---------- Basic settings  ----------#
+PROGRAM_NAME = example
+SOURCE_BASE  = src
+BUILD_BASE   = build
+BINARY_BASE  = $(BUILD_BASE)
+
+#---------- Unit tests ----------#
+TEST_SUFFIX  = Test
+GTEST_BASE   = gtest/gtest-1.7.0
+TEST_EXCLUDE = main
+
+#---------- Compilation and linking ----------#
+CXX        = g++
+SRC_EXTS   = .cc .cpp .cxx .c++ .c
+CXX_LANG   = -Wall -Wextra -pedantic -Wfatal-errors -std=c++11
+CXX_OPT    = -O3 -march=native -flto -g -pipe
+INC_DIRS   = -I$(SOURCE_BASE)
+LINK_FLAGS = -lm
+
+
+#---------- No need to modify below ----------#
+APP := $(BINARY_BASE)/$(PROGRAM_NAME)
+TST := $(BINARY_BASE)/$(PROGRAM_NAME)$(TEST_SUFFIX)
+SRC_DIRS := $(shell find $(SOURCE_BASE) -type d -print)
+BLD_DIRS := $(addprefix $(BUILD_BASE)/,$(SRC_DIRS))
+ALL_SRCS := $(foreach DIR,$(SRC_DIRS),$(foreach EXT,$(SRC_EXTS),$(wildcard $(DIR)/*$(EXT))))
+TST_USRC := $(foreach DIR,$(SRC_DIRS),$(foreach EXT,$(SRC_EXTS),$(wildcard $(DIR)/*$(TEST_SUFFIX)$(EXT))))
+TST_UOBJ := $(addsuffix .o,$(addprefix $(BUILD_BASE)/,$(TST_USRC)))
+TST_UDEP := $(TST_UOBJ:.o=.d)
+APP_SRCS := $(filter-out $(TST_USRC),$(ALL_SRCS))
+APP_OBJS := $(addsuffix .o,$(addprefix $(BUILD_BASE)/,$(APP_SRCS)))
+APP_DEPS := $(APP_OBJS:.o=.d)
+TST_AEXC := $(foreach EXT,$(SRC_EXTS),$(filter %$(TEST_EXCLUDE)$(EXT).o,$(APP_OBJS)))
+TST_AOBJ := $(filter-out $(TST_AEXC),$(APP_OBJS))
+
+TST_INC  := -I$(GTEST_BASE)/include
+TST_MAIN := $(GTEST_BASE)/make/gtest_main.a
+OPTS := $(CXX_LANG) $(CXX_OPT)
+
+.PHONY: all test clean
+
+all: $(APP)
+
+$(APP): $(APP_OBJS)
+	@echo [LD] $@
+	@$(CXX) $(OPTS) $(APP_OBJS) $(LINK_FLAGS) -o $(APP)
+
+$(APP_OBJS): $(BUILD_BASE)/%.o: % | $(BLD_DIRS)
+	@echo [CC] $<
+	@$(CXX) $(OPTS) $(INC_DIRS) -MD -MP -c -o $@ $<
+
+$(BLD_DIRS):
+	@mkdir -p $@
+
+test: $(TST)
+	@./$(TST)
+
+$(TST): $(TST_UOBJ) $(TST_AOBJ) | $(BLD_DIRS)
+	@echo [LD] $@
+	@$(CXX) $(OPTS) $(TST_INC) $(TST_UOBJ) $(TST_AOBJ) $(TST_MAIN) $(LINK_FLAGS) -o $(TST)
+
+$(TST_UOBJ): $(BUILD_BASE)/%.o: % | $(BLD_DIRS)
+	@echo [CC] $<
+	@$(CXX) $(OPTS) $(INC_DIRS) $(TST_INC) -MD -MP -c -o $@ $<
+
+clean:
+ifeq ($(SOURCE_BASE),$(BUILD_BASE))
+	@rm -f $(APP_OBJS) $(APP_DEPS) $(APP) $(TST_UOBJ) $(TST_UDEP) $(TST)
+else
+	@rm -rf $(APP) $(TST) $(BUILD_BASE)
+endif
+
+-include $(APP_DEPS) $(TST_UDEP)
+
