@@ -18,58 +18,82 @@
 # source files 'car.cc' and 'animal.cc' would have unit tests called          #
 # 'carTest.cc' and 'animalTest.cc', respectively. To exclude any files from   #
 # unit tests, set 'TEST_EXCLUDE' (e.g. 'main' to exclude main.cc, etc.).      #
-# Finally, specify the location of the gtest framework.                       #
-# See https://code.google.com/p/googletest to download and compile the        #
-# gtest framework.                                                            #
 #                                                                             #
 # Type 'make' to build, and 'make test' to test. All dependencies (including  #
 # header file changes) will be handled automatically.                         #
 #                                                                             #
 ###############################################################################
 
-
 #---------- Basic settings  ----------#
-PROGRAM_NAME = example
-SOURCE_BASE  = src
-BUILD_BASE   = build
-BINARY_BASE  = $(BUILD_BASE)
+PROGRAM_NAME := example
+SOURCE_BASE  := src
+BUILD_BASE   := build
+BINARY_BASE  := $(BUILD_BASE)
 
 #---------- Unit tests ----------#
-TEST_SUFFIX  = Test
-GTEST_BASE   = gtest/gtest-1.7.0
-TEST_EXCLUDE = main
+TEST_SUFFIX  := Test
+TEST_EXCLUDE := main
+GTEST_BASE   := gtest
+GTEST_URL    := https://googletest.googlecode.com/files/gtest-1.7.0.zip
 
 #---------- Compilation and linking ----------#
-CXX        = g++
-SRC_EXTS   = .cc .cpp .cxx .c++ .c
-CXX_LANG   = -Wall -Wextra -pedantic -Wfatal-errors -std=c++11
-CXX_OPT    = -O3 -march=native -flto -g -pipe
-INC_DIRS   = -I$(SOURCE_BASE)
-LINK_FLAGS = -lm
+CXX        := g++
+SRC_EXTS   := .cc .cpp .cxx .c++ .c
+CXX_LANG   := -std=c++11
+CXX_WARN   := -pedantic -Wall -Wextra -Wcast-align -Wcast-qual \
+              -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op \
+              -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept \
+              -Woverloaded-virtual -Wredundant-decls -Wsign-conversion \
+              -Wsign-promo -Wstrict-null-sentinel -Wstrict-overflow=5 \
+              -Wswitch-default -Wshadow \
+              #-Wundef -Wold-style-cast -Wctor-dtor-privacy
+CXX_OPT    := -O3 -march=native -flto -g -pipe
+CXX_COMP   := #-fdiagnostics-color=auto -pipe #-Wfatal-errors
+INC_DIRS   := -I$(SOURCE_BASE)
+LINK_FLAGS := -lm
 
 
 #---------- No need to modify below ----------#
-APP := $(BINARY_BASE)/$(PROGRAM_NAME)
-TST := $(BINARY_BASE)/$(PROGRAM_NAME)$(TEST_SUFFIX)
+
+OPTS     := $(CXX_LANG) $(CXX_WARN) $(CXX_OPT) $(CXX_COMP)
 SRC_DIRS := $(shell find $(SOURCE_BASE) -type d -print)
 BLD_DIRS := $(addprefix $(BUILD_BASE)/,$(SRC_DIRS))
 ALL_SRCS := $(foreach DIR,$(SRC_DIRS),$(foreach EXT,$(SRC_EXTS),$(wildcard $(DIR)/*$(EXT))))
-TST_USRC := $(foreach DIR,$(SRC_DIRS),$(foreach EXT,$(SRC_EXTS),$(wildcard $(DIR)/*$(TEST_SUFFIX)$(EXT))))
-TST_UOBJ := $(addsuffix .o,$(addprefix $(BUILD_BASE)/,$(TST_USRC)))
-TST_UDEP := $(TST_UOBJ:.o=.d)
-APP_SRCS := $(filter-out $(TST_USRC),$(ALL_SRCS))
+ALL_TSTS := $(foreach EXT,$(SRC_EXTS),$(filter %$(TEST_SUFFIX)$(EXT),$(ALL_SRCS)))
+
+# Application
+APP      := $(BINARY_BASE)/$(PROGRAM_NAME)
+APP_SRCS := $(filter-out $(ALL_TSTS),$(ALL_SRCS))
 APP_OBJS := $(addsuffix .o,$(addprefix $(BUILD_BASE)/,$(APP_SRCS)))
 APP_DEPS := $(APP_OBJS:.o=.d)
+
+# Test infrastructure
+TST      := $(BINARY_BASE)/$(PROGRAM_NAME)$(TEST_SUFFIX)
+TST_UOBJ := $(addsuffix .o,$(addprefix $(BUILD_BASE)/,$(ALL_TSTS)))
+TST_UDEP := $(TST_UOBJ:.o=.d)
 TST_AEXC := $(foreach EXT,$(SRC_EXTS),$(filter %$(TEST_EXCLUDE)$(EXT).o,$(APP_OBJS)))
 TST_AOBJ := $(filter-out $(TST_AEXC),$(APP_OBJS))
 
-TST_INC  := -I$(GTEST_BASE)/include
-TST_MAIN := $(GTEST_BASE)/make/gtest_main.a
-OPTS := $(CXX_LANG) $(CXX_OPT)
+# Gtest framework
+GTEST_PKG      := $(GTEST_BASE)/README
+GTEST_INC      := $(GTEST_BASE)/include
+GTEST_MAIN_OBJ := $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.o
+GTEST_ALL_OBJ  := $(BUILD_BASE)/$(GTEST_BASE)/gtest-all.o
+GTEST_LIB      := $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.a
 
-.PHONY: all test clean
 
+.PHONY: all
 all: $(APP)
+
+.PHONY: clean
+clean:
+ifeq ($(SOURCE_BASE),$(BUILD_BASE))
+	@rm -f $(APP_OBJS) $(APP_DEPS) $(APP) $(TST_UOBJ) $(TST_UDEP) $(TST)
+else
+	@rm -rf $(APP) $(TST) $(BUILD_BASE)
+endif
+
+# Application
 
 $(APP): $(APP_OBJS)
 	@echo [LD] $@
@@ -82,23 +106,54 @@ $(APP_OBJS): $(BUILD_BASE)/%.o: % | $(BLD_DIRS)
 $(BLD_DIRS):
 	@mkdir -p $@
 
+
+# Test infrastructure
+
+.PHONY: test
 test: $(TST)
 	@./$(TST)
 
-$(TST): $(TST_UOBJ) $(TST_AOBJ) | $(BLD_DIRS)
+$(TST): $(TST_UOBJ) $(TST_AOBJ) $(GTEST_LIB) | $(BLD_DIRS)
 	@echo [LD] $@
-	@$(CXX) $(OPTS) $(TST_INC) $(TST_UOBJ) $(TST_AOBJ) $(TST_MAIN) $(LINK_FLAGS) -o $(TST)
+	@$(CXX) $(OPTS) -I$(GTEST_INC) $(TST_UOBJ) $(TST_AOBJ) $(GTEST_LIB) $(LINK_FLAGS) -o $(TST)
 
+
+# Gtest Infrastructure
+
+# Gtest extracted directory
+$(GTEST_PKG):
+	@echo '[GTest]    $(GTEST_URL)'
+	@curl -O $(GTEST_URL)
+	@unzip -q $(notdir $(GTEST_URL))
+	@mv $(basename $(notdir $(GTEST_URL))) $(GTEST_BASE)
+	@rm $(notdir $(GTEST_URL))
+
+# Gtest primary object file (everything but main())
+$(GTEST_ALL_OBJ): $(GTEST_PKG)
+	@echo '[GTest]    $@'
+	@mkdir -p $(dir $@)
+	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) -pthread \
+     -c $(GTEST_BASE)/src/gtest-all.cc -o $@
+
+# Gtest main() function which runs all tests
+$(GTEST_MAIN_OBJ): $(GTEST_PKG)
+	@echo '[GTest]    $@'
+	@mkdir -p $(dir $@)
+	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) -pthread \
+     -c $(GTEST_BASE)/src/gtest_main.cc -o $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.o
+
+# Rule for building unit test source files
 $(TST_UOBJ): $(BUILD_BASE)/%.o: % | $(BLD_DIRS)
 	@echo [CC] $<
-	@$(CXX) $(OPTS) $(INC_DIRS) $(TST_INC) -MD -MP -c -o $@ $<
+	@$(CXX) $(OPTS) $(INC_DIRS) -I$(GTEST_INC) -MD -MP -c -o $@ $<
 
-clean:
-ifeq ($(SOURCE_BASE),$(BUILD_BASE))
-	@rm -f $(APP_OBJS) $(APP_DEPS) $(APP) $(TST_UOBJ) $(TST_UDEP) $(TST)
-else
-	@rm -rf $(APP) $(TST) $(BUILD_BASE)
-endif
+.PHONY: gtest
+gtest: $(GTEST_LIB)
+
+# The gtest library which is linked with test source objects
+$(GTEST_LIB): $(GTEST_ALL_OBJ) $(GTEST_MAIN_OBJ)
+	@echo '[GTest]    $@'
+	@ar -c -rv $@ $^
+
 
 -include $(APP_DEPS) $(TST_UDEP)
-
