@@ -22,6 +22,16 @@
 # Type 'make' to build, and 'make test' to test. All dependencies (including  #
 # header file changes) will be handled automatically.                         #
 #                                                                             #
+# Usage:                                                                      #
+#                                                                             #
+#   make all    Build the application (excluding unit tests)                  #
+#                                                                             #
+#   make test       Build and run all unit tests. Depends on gmock, which     #
+#                   will be downloaded and compiled the first time running    #
+#                   this target.                                              #
+#   make clean      Clean all build output.                                   #
+#   make cleanall   Clean all build output, including gmock.                  #
+#                                                                             #
 ###############################################################################
 
 #---------- Basic settings  ----------#
@@ -33,8 +43,9 @@ BINARY_BASE  := $(BUILD_BASE)
 #---------- Unit tests ----------#
 TEST_SUFFIX  := Test
 TEST_EXCLUDE := main
-GTEST_BASE   := gtest
-GTEST_URL    := https://googletest.googlecode.com/files/gtest-1.7.0.zip
+GTEST_URL    := git@github.com:google/googletest.git
+GTEST_BASE   := googletest/googletest
+GMOCK_BASE   := googletest/googlemock
 
 #---------- Compilation and linking ----------#
 CXX        := g++
@@ -43,14 +54,14 @@ CXX_LANG   := -std=c++11
 CXX_WARN   := -pedantic -Wall -Wextra -Wcast-align -Wcast-qual \
               -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op \
               -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept \
-              -Woverloaded-virtual -Wredundant-decls -Wsign-conversion \
+              -Woverloaded-virtual -Wredundant-decls \
               -Wsign-promo -Wstrict-null-sentinel -Wstrict-overflow=5 \
               -Wswitch-default -Wshadow \
-              #-Wundef -Wold-style-cast -Wctor-dtor-privacy
-CXX_OPT    := -O3 -march=native -flto -g -pipe
+              #-Wsign-conversion -Wundef -Wold-style-cast -Wctor-dtor-privacy
+CXX_OPT    := -O3 -march=native -g -pipe
 CXX_COMP   := #-fdiagnostics-color=auto -pipe #-Wfatal-errors
 INC_DIRS   := -I$(SOURCE_BASE)
-LINK_FLAGS := -lm
+LINK_FLAGS := -lm -lpthread
 
 
 #---------- No need to modify below ----------#
@@ -75,11 +86,15 @@ TST_AEXC := $(foreach EXT,$(SRC_EXTS),$(filter %$(TEST_EXCLUDE)$(EXT).o,$(APP_OB
 TST_AOBJ := $(filter-out $(TST_AEXC),$(APP_OBJS))
 
 # Gtest framework
-GTEST_PKG      := $(GTEST_BASE)/README
+GTEST_PKG      := $(GTEST_BASE)/README.md
 GTEST_INC      := $(GTEST_BASE)/include
-GTEST_MAIN_OBJ := $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.o
 GTEST_ALL_OBJ  := $(BUILD_BASE)/$(GTEST_BASE)/gtest-all.o
-GTEST_LIB      := $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.a
+
+# Gmock framework
+GMOCK_INC      := $(GMOCK_BASE)/include
+GMOCK_MAIN_OBJ := $(BUILD_BASE)/$(GMOCK_BASE)/gmock_main.o
+GMOCK_ALL_OBJ  := $(BUILD_BASE)/$(GMOCK_BASE)/gmock-all.o
+GMOCK_LIB      := $(BUILD_BASE)/$(GMOCK_BASE)/gmock_main.a
 
 
 .PHONY: all
@@ -92,6 +107,10 @@ ifeq ($(SOURCE_BASE),$(BUILD_BASE))
 else
 	@rm -rf $(APP) $(TST) $(BUILD_BASE)
 endif
+
+.PHONY: cleanall
+cleanall: clean
+	@rm -rf $(basename $(notdir $(GTEST_URL)))
 
 # Application
 
@@ -113,9 +132,10 @@ $(BLD_DIRS):
 test: $(TST)
 	@./$(TST)
 
-$(TST): $(TST_UOBJ) $(TST_AOBJ) $(GTEST_LIB) | $(BLD_DIRS)
+$(TST): $(GMOCK_LIB) $(TST_UOBJ) $(TST_AOBJ) | $(BLD_DIRS)
 	@echo [LD] $@
-	@$(CXX) $(OPTS) -I$(GTEST_INC) $(TST_UOBJ) $(TST_AOBJ) $(GTEST_LIB) $(LINK_FLAGS) -o $(TST)
+	@$(CXX) $(OPTS) -I$(GTEST_INC) -I$(GMOCK_INC) $(GMOCK_LIB) $(TST_UOBJ) $(TST_AOBJ) \
+            $(LINK_FLAGS) -pthread -o $(TST)
 
 
 # Gtest Infrastructure
@@ -123,10 +143,7 @@ $(TST): $(TST_UOBJ) $(TST_AOBJ) $(GTEST_LIB) | $(BLD_DIRS)
 # Gtest extracted directory
 $(GTEST_PKG):
 	@echo '[GTest]    $(GTEST_URL)'
-	@curl -O $(GTEST_URL)
-	@unzip -q $(notdir $(GTEST_URL))
-	@mv $(basename $(notdir $(GTEST_URL))) $(GTEST_BASE)
-	@rm $(notdir $(GTEST_URL))
+	@git clone $(GTEST_URL)
 
 # Gtest primary object file (everything but main())
 $(GTEST_ALL_OBJ): $(GTEST_PKG)
@@ -135,24 +152,36 @@ $(GTEST_ALL_OBJ): $(GTEST_PKG)
 	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) -pthread \
      -c $(GTEST_BASE)/src/gtest-all.cc -o $@
 
-# Gtest main() function which runs all tests
-$(GTEST_MAIN_OBJ): $(GTEST_PKG)
-	@echo '[GTest]    $@'
-	@mkdir -p $(dir $@)
-	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) -pthread \
-     -c $(GTEST_BASE)/src/gtest_main.cc -o $(BUILD_BASE)/$(GTEST_BASE)/gtest_main.o
-
 # Rule for building unit test source files
 $(TST_UOBJ): $(BUILD_BASE)/%.o: % | $(BLD_DIRS)
 	@echo [CC] $<
-	@$(CXX) $(OPTS) $(INC_DIRS) -I$(GTEST_INC) -MD -MP -c -o $@ $<
+	@$(CXX) $(OPTS) $(INC_DIRS) -I$(GTEST_INC) -I$(GMOCK_INC) -MD -MP -c -o $@ $<
 
-.PHONY: gtest
-gtest: $(GTEST_LIB)
 
-# The gtest library which is linked with test source objects
-$(GTEST_LIB): $(GTEST_ALL_OBJ) $(GTEST_MAIN_OBJ)
-	@echo '[GTest]    $@'
+# Gmock Infrastructure
+
+# Gmock primary object file (everything but main())
+$(GMOCK_ALL_OBJ): $(GTEST_PKG)
+	@echo '[GMock]    $@'
+	@mkdir -p $(dir $@)
+	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) \
+            -isystem $(GMOCK_INC) -I$(GMOCK_BASE) \
+            -pthread -c $(GMOCK_BASE)/src/gmock-all.cc -o $@
+
+# Gmock main() function which runs all tests
+$(GMOCK_MAIN_OBJ): $(GTEST_PKG)
+	@echo '[GMock]    $@'
+	@mkdir -p $(dir $@)
+	@$(CXX) -isystem $(GTEST_INC) -I$(GTEST_BASE) \
+            -isystem $(GMOCK_INC) -I$(GMOCK_BASE) \
+            -pthread -c $(GMOCK_BASE)/src/gmock_main.cc -o $@
+
+.PHONY: gmock
+gmock: $(GMOCK_LIB)
+
+# The gmock library which is linked with test source objects
+$(GMOCK_LIB): $(GTEST_ALL_OBJ) $(GMOCK_ALL_OBJ) $(GMOCK_MAIN_OBJ)
+	@echo '[GMock]    $@'
 	@ar -c -rv $@ $^
 
 
